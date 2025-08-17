@@ -329,22 +329,26 @@ public class Controller {
 			
 			UpdateItemResult result = dynamodDb.updateItem(updateItem);
 			
-			AttributeValue groupIdname = new AttributeValue(body.get("groupIdname"));
-			
-			attributeNames = new HashMap<String,String>();
-			attributeNames.put("#fromUsername","fromUsername");
-			attributeNames.put("#toUsername","toUsername");
-			
-			attributeValues = new HashMap<String,AttributeValue>();
-			attributeValues.put(":username", body.get("username"));
-			
-			QueryRequest queryRequest = new QueryRequest()
-					.withTableName("connection_requests")
-					.withKeyConditionExpression("#toUsername=:username OR #fromUsername=:username")
-					.withExpressionAttributeNames(attributeNames)
-					.withExpressionAttributeValues(attributeValues);
-			
-			QueryResult queryResult = dynamodDb.query(queryRequest);
+//			AttributeValue groupIdname = new AttributeValue(body.get("groupIdname"));
+//			
+//			attributeNames = new HashMap<String,String>();
+//			attributeNames.put("#fromUsername","fromUsername");
+//			attributeNames.put("#toUsername","toUsername");
+//			
+//			attributeValues = new HashMap<String,AttributeValue>();
+//			attributeValues.put(":username", new AttributeValue(body.get("username")));
+//			
+//			QueryRequest queryRequest = new QueryRequest()
+//					.withTableName("connection_requests")
+//					.withKeyConditionExpression("#toUsername=:username OR #fromUsername=:username")
+//					.withExpressionAttributeNames(attributeNames)
+//					.withExpressionAttributeValues(attributeValues);
+//			
+//			QueryResult queryResult = dynamodDb.query(queryRequest);
+//			
+//			for (Map<String, AttributeValue>i: queryResult.getItems()) {
+//				
+//			}
 			
 			
 			response.put("result", result.getSdkHttpMetadata().getHttpStatusCode() + "");
