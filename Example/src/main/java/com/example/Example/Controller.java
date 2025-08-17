@@ -4,8 +4,6 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.core.env.Environment;
 import org.springframework.http.HttpEntity;
 import org.springframework.http.HttpHeaders;
-import org.springframework.http.HttpStatus;
-import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.util.LinkedMultiValueMap;
 import org.springframework.util.MultiValueMap;
@@ -18,21 +16,19 @@ import org.springframework.web.client.RestTemplate;
 import org.springframework.web.servlet.view.RedirectView;
 
 import com.amazonaws.services.dynamodbv2.AmazonDynamoDB;
-import com.amazonaws.services.dynamodbv2.model.AttributeAction;
 import com.amazonaws.services.dynamodbv2.model.AttributeValue;
-import com.amazonaws.services.dynamodbv2.model.AttributeValueUpdate;
+import com.amazonaws.services.dynamodbv2.model.BatchGetItemRequest;
+import com.amazonaws.services.dynamodbv2.model.BatchGetItemResult;
+import com.amazonaws.services.dynamodbv2.model.KeysAndAttributes;
 import com.amazonaws.services.dynamodbv2.model.PutItemRequest;
 import com.amazonaws.services.dynamodbv2.model.PutItemResult;
 import com.amazonaws.services.dynamodbv2.model.QueryRequest;
 import com.amazonaws.services.dynamodbv2.model.QueryResult;
 import com.amazonaws.services.dynamodbv2.model.ScanRequest;
 import com.amazonaws.services.dynamodbv2.model.ScanResult;
-import com.amazonaws.services.dynamodbv2.model.Update;
 import com.amazonaws.services.dynamodbv2.model.UpdateItemRequest;
 import com.amazonaws.services.dynamodbv2.model.UpdateItemResult;
 
-import java.awt.desktop.UserSessionEvent;
-import java.nio.charset.StandardCharsets;
 import java.util.*;
 
 @RestController
@@ -197,6 +193,7 @@ public class Controller {
 		
 		try {
 			Map<String,Object> response = new HashMap<String,Object>();
+			System.out.println("200");
 
 			AttributeValue user = new AttributeValue(body.get("username"));
 			
@@ -204,6 +201,7 @@ public class Controller {
 			attributeNames.put("#user","user");
 			attributeNames.put("#password","password");
 			
+			System.out.println("207");
 			Map<String,AttributeValue> attributeValues = new HashMap<String,AttributeValue>();
 			attributeValues.put(":user", user);
 			
@@ -213,11 +211,21 @@ public class Controller {
 					.withExpressionAttributeNames(attributeNames)
 					.withExpressionAttributeValues(attributeValues)
 					.withProjectionExpression("#password");
+			System.out.println("217");
 			
 			QueryResult queryResult = dynamodDb.query(queryRequest);
 			
 			response.put("count", queryResult.getCount());
+			
 			response.put("ok", "true");
+			System.out.println(queryResult.getCount());
+			
+			System.out.println("227");
+			
+			if (queryResult.getCount() < 1) {
+				response.put("loginStatus", "failure");
+				return ResponseEntity.ok(response);
+			}
 			
 			for (Map<String,AttributeValue> i: queryResult.getItems()) {
 				if (i.get("password").getS().equals(body.get("password").toString())) {
@@ -234,6 +242,7 @@ public class Controller {
 			Map<String,Object> response = new HashMap<String,Object>();
 			
 			response.put("ok", "false");
+			response.put("loginStatus", "failure");
 			response.put("error_message", e.getMessage());
 			
 			return ResponseEntity.badRequest().body(response);
@@ -249,14 +258,15 @@ public class Controller {
 			AttributeValue user = new AttributeValue(body.get("username"));
 			
 			Map<String,String> attributeNames = new HashMap<String,String>();
-			attributeNames.put("#user","username");
+			attributeNames.put("#fromUsername","fromUsername");
+			attributeNames.put("#toUsername","toUsername");
 			
 			Map<String,AttributeValue> attributeValues = new HashMap<String,AttributeValue>();
-			attributeValues.put(":user", user);
+			attributeValues.put(":fromUsername", user);
 			
 			ScanRequest scanRequest = new ScanRequest()
 					.withTableName("connection_requests")
-					.withFilterExpression("contains(#user, :user)")
+					.withFilterExpression("#fromUsername =:fromUsername OR #toUsername=:fromUsername")
 					.withExpressionAttributeNames(attributeNames)
 					.withExpressionAttributeValues(attributeValues);
 			
@@ -271,7 +281,6 @@ public class Controller {
 				Map<String,String> map = new HashMap<String,String>();
 				for (Map.Entry<String,AttributeValue> j : i.entrySet()) {
 					map.put(j.getKey().toString(),j.getValue().getS());
-//					System.out.println(j.getValue().getS());
 				}
 				requests.add(map);
 				
@@ -311,10 +320,6 @@ public class Controller {
 			Map<String,AttributeValue> attributeValues = new HashMap<String,AttributeValue>();
 			attributeValues.put(":name", name);
 			
-//			Map<String,AttributeValueUpdate> updatedValues = new HashMap<String,AttributeValueUpdate>();
-//			updatedValues.put("name", new AttributeValueUpdate().withValue(new AttributeValue().withS(body.get("name"))).withAction(AttributeAction.PUT));
-			
-			
 			UpdateItemRequest updateItem = new UpdateItemRequest()
 					.withTableName("enjoyyable_users")
 					.withKey(key)
@@ -324,7 +329,23 @@ public class Controller {
 			
 			UpdateItemResult result = dynamodDb.updateItem(updateItem);
 			
-			System.out.println("result is: " + result);
+			AttributeValue groupIdname = new AttributeValue(body.get("groupIdname"));
+			
+			attributeNames = new HashMap<String,String>();
+			attributeNames.put("#fromUsername","fromUsername");
+			attributeNames.put("#toUsername","toUsername");
+			
+			attributeValues = new HashMap<String,AttributeValue>();
+			attributeValues.put(":username", body.get("username"));
+			
+			QueryRequest queryRequest = new QueryRequest()
+					.withTableName("connection_requests")
+					.withKeyConditionExpression("#toUsername=:username OR #fromUsername=:username")
+					.withExpressionAttributeNames(attributeNames)
+					.withExpressionAttributeValues(attributeValues);
+			
+			QueryResult queryResult = dynamodDb.query(queryRequest);
+			
 			
 			response.put("result", result.getSdkHttpMetadata().getHttpStatusCode() + "");
 			response.put("ok","true");
@@ -539,17 +560,16 @@ public class Controller {
 			Map<String,String> attributeNames = new HashMap<String,String> ();
 			attributeNames.put("#username", "user");
 			attributeNames.put("#name", "name");
-			attributeNames.put("#friendshipStatus", "friendshipStatus");
 			
 			Map<String,AttributeValue> attributeValues = new HashMap<String,AttributeValue>();
 			attributeValues.put(":hint", new AttributeValue(body.get("userHint")));
 			
 			ScanRequest scanRequest = new ScanRequest()
-					.withTableName("connection_requests")
+					.withTableName("enjoyyable_users")
 					.withFilterExpression("contains(#username, :hint) OR contains(#name,:hint)")
 					.withExpressionAttributeNames(attributeNames)
 					.withExpressionAttributeValues(attributeValues)
-					.withProjectionExpression("#name,#username,#friendshipStatus");
+					.withProjectionExpression("#name,#username");
 		
 			ScanResult queryResult = dynamodDb.scan(scanRequest);
 			
@@ -651,7 +671,7 @@ public class Controller {
 		}
 	}
 	
-	@PostMapping ("sendConnectionRequest")
+	@PostMapping ("/sendConnectionRequest")
 	public ResponseEntity<Map<String,Object>> sendConnectionRequest (@RequestBody Map<String,String> body) {
 		try {
 			Map<String,Object> response = new HashMap<String,Object>();
@@ -664,12 +684,13 @@ public class Controller {
 			
 			Map<String,AttributeValue> item = new HashMap<String,AttributeValue>();
 			item.put("time", new AttributeValue(sendTime));
-			item.put("username", new AttributeValue(sendFromUsername + "#&#" + sendToUsername));
+			item.put("fromUsername", new AttributeValue(sendFromUsername));
 			item.put("friendshipStatus", new AttributeValue("requested"));
-			item.put("name", new AttributeValue(sendMyName + "#&#" + sendName));
-			
+			item.put("fromName", new AttributeValue(sendMyName));
+			item.put("toName", new AttributeValue(sendName));
+			item.put("toUsername", new AttributeValue(sendToUsername));
 			PutItemRequest putItemRequest = new PutItemRequest()
-					.withTableName("groups")
+					.withTableName("connection_requests")
 					.withItem(item);
 			
 			PutItemResult putItemResult = dynamodDb.putItem(putItemRequest);
@@ -740,11 +761,59 @@ public class Controller {
 			
 			String username = body.get("username");
 			Map<String,String> attributeNames = new HashMap<String,String>();
-			attributeNames.put("#username", "username");
+			attributeNames.put("#toUsername", "toUsername");
 			attributeNames.put("#friendshipStatus", "friendshipStatus");
 			
 			Map<String,AttributeValue> attributeValues = new HashMap<String,AttributeValue>();
 			attributeValues.put(":friended", new AttributeValue("requested"));
+			attributeValues.put(":toUsername", new AttributeValue(body.get("username")));
+			
+			ScanRequest scanRequest = new ScanRequest()
+					.withTableName("connection_requests")
+					.withFilterExpression("#toUsername=:toUsername AND #friendshipStatus = :friended")
+					.withExpressionAttributeNames(attributeNames)
+					.withExpressionAttributeValues(attributeValues);
+			
+			ScanResult scanResult = dynamodDb.scan(scanRequest);
+			
+			
+			ArrayList<Object> arrayList = new ArrayList<Object>();
+			for (Map<String,AttributeValue> i : scanResult.getItems()) {
+				Map<String,String> temp = new HashMap<>();
+				for (Map.Entry<String,AttributeValue> j:i.entrySet()) {
+					temp.put(j.getKey(), j.getValue().getS());
+				}
+				arrayList.add(temp);
+			}
+			
+			Map<String,Object> response = new HashMap<String,Object>(); 
+			
+			response.put("items", arrayList);
+			response.put("ok", "true");
+			
+			return ResponseEntity.ok(response);
+			
+		} catch (Exception e) {
+			Map<String, Object> response = new HashMap<String,Object>();
+			
+			response.put("ok", "false");
+			response.put("error_message", e.getMessage());
+			
+			return ResponseEntity.badRequest().body(response);
+		}
+	}
+	
+	@PostMapping ("/getFriends")
+	public ResponseEntity<Map<String,Object>> getFriends (@RequestBody Map<String,String> body) {
+		try {
+			
+			String username = body.get("username");
+			Map<String,String> attributeNames = new HashMap<String,String>();
+			attributeNames.put("#username", "username");
+			attributeNames.put("#friendshipStatus", "friendshipStatus");
+			
+			Map<String,AttributeValue> attributeValues = new HashMap<String,AttributeValue>();
+			attributeValues.put(":friended", new AttributeValue("friends"));
 			attributeValues.put(":username", new AttributeValue(body.get("username")));
 			
 			ScanRequest scanRequest = new ScanRequest()
@@ -780,5 +849,54 @@ public class Controller {
 		}
 	}
 	
+	@PostMapping ("/getNames")
+	public ResponseEntity<Map<String,Object>> getNames (@RequestBody Map<String,List<String>> body) {
+		try {
+			
+			List<String> usernames = (List<String>)body.get("usernames");
+			
+			
+			String tableName = "enjoyyable_users";
+			
+			List<Map<String,AttributeValue>> keys = new ArrayList<>();
+			for (String i: usernames) {
+				Map<String,AttributeValue> temp = new HashMap<String,AttributeValue>();
+				temp.put("user", new AttributeValue(i));
+				keys.add(temp);
+			}
+			KeysAndAttributes keysAndAttributes = new KeysAndAttributes().withKeys(keys);
+			
+			Map<String, KeysAndAttributes> request = new HashMap<>();
+			request.put(tableName, keysAndAttributes);
+			
+			BatchGetItemRequest batchGetItem = new BatchGetItemRequest(request);
+			
+			BatchGetItemResult batchGetItemResult = dynamodDb.batchGetItem(batchGetItem);
+			
+			Map<String,Object> response = new HashMap<String,Object>(); 
+			
+			List<Map<String,String>> names = new ArrayList<>();
+			
+			for (Map<String,AttributeValue> i: batchGetItemResult.getResponses().get("enjoyyable_users")) {
+				Map<String,String> temp = new HashMap<String,String>();
+				temp.put("user",i.get("user").getS());
+				temp.put("name",i.get("name").getS());
+				names.add(temp);
+			}
+			
+			response.put("items", names);
+			response.put("ok", "true");
+			
+			return ResponseEntity.ok(response);
+			
+		} catch (Exception e) {
+			Map<String, Object> response = new HashMap<String,Object>();
+			
+			response.put("ok", "false");
+			response.put("error_message", e.getMessage());
+			
+			return ResponseEntity.badRequest().body(response);
+		}
+	}
 	
 }	
